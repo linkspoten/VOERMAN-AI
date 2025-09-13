@@ -151,11 +151,18 @@ async function loadMsg(id){
 
 function prettyName(path){ try{ return path.split(/[\\/]/).pop(); }catch(e){ return path; } }
 function renderAttachments(list){
-  const el = document.getElementById('atts'); el.innerHTML = '';
-  (list||[]).forEach(p=>{
-     let href = p; if(!href.startsWith('/')){ href = '/out/'+prettyName(href); }
-     const a = document.createElement('a'); a.href = href; a.textContent = prettyName(p); a.target = '_blank'; a.style.marginRight='10px';
-     el.appendChild(a);
+  const el = document.getElementById('atts');
+  el.innerHTML = '';
+  (list || []).forEach(item => {
+    const p = typeof item === 'string' ? item : (item.uri || item.filename);
+    if (!p) return;
+    let href = p.startsWith('/') ? p : '/out/' + prettyName(p);
+    const a = document.createElement('a');
+    a.href = href;
+    a.textContent = prettyName(p);
+    a.target = '_blank';
+    a.style.marginRight = '10px';
+    el.appendChild(a);
   });
 }
 
