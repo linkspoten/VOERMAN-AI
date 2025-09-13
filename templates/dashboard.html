@@ -1,242 +1,61 @@
-<!doctype html>
-<html lang="nl">
-<head>
-  <meta charset="utf-8"/>
-  <title>Voerman Dashboard (MVP)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,'Helvetica Neue',Arial,sans-serif;margin:0;background:#0b0c10;color:#f1f5f9}
-    header{padding:14px 18px;background:#111827;border-bottom:1px solid #1f2937;display:flex;justify-content:space-between;align-items:center}
-    header h1{font-size:18px;margin:0}
-    main{display:grid;grid-template-columns: 360px 1fr;min-height: calc(100vh - 56px)}
-    aside{border-right:1px solid #1f2937;padding:12px;background:#0f172a}
-    section{padding:16px}
-    .card{background:#111827;border:1px solid #1f2937;border-radius:12px;padding:12px;margin-bottom:12px}
-    .btn{background:#2563eb;color:#fff;border:none;border-radius:10px;padding:8px 12px;cursor:pointer}
-    .btn.secondary{background:#374151}
-    .btn:disabled{opacity:.6;cursor:not-allowed}
-    input, textarea, select{width:100%;background:#0b1220;color:#e5e7eb;border:1px solid #1f2937;border-radius:10px;padding:8px;margin:4px 0 10px 0}
-    table{width:100%;border-collapse:collapse}
-    th, td{padding:8px;border-bottom:1px solid #1f2937}
-    tr:hover{background:#0b1220}
-    .row{display:flex;gap:10px;align-items:center}
-    iframe{width:100%;height:420px;background:#fff;border:1px solid #1f2937;border-radius:10px}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
-  </style>
-</head>
-<body>
-<header>
-  <h1>Voerman Dashboard (MVP)</h1>
-  <div class="row">
-    <button class="btn" onclick="refreshList()">Vernieuw</button>
-    <button class="btn secondary" onclick="openPreview()">Open preview</button>
-  </div>
-</header>
-<main>
-  <aside>
-    <div class="card">
-      <h3>Nieuwe testmail importeren</h3>
-      <label>Afzender e-mail</label><input id="sender" placeholder="klant@example.com" value="klant@example.com"/>
-      <label>Onderwerp</label><input id="subject" placeholder="Offerte aanvraag"/>
-      <label>Taal</label>
-      <select id="lang"><option value="nl">Nederlands</option><option value="en">English</option></select>
-      <label>Body</label><textarea id="body" rows="6" placeholder="Bijv: Graag prijs voor 12.5 m3 en 800 kg van AMS naar YUL."></textarea>
-      <button class="btn" onclick="importMail()">Importeer</button>
-      <div id="importStatus" class="mono"></div><div id="statusBar" class="mono" style="margin-top:8px;color:#93c5fd"></div>
-    </div>
-    <div class="card">
-      <h3>Inbox (test)</h3>
-      <table>
-        <thead><tr><th>Onderwerp</th><th>Van</th><th></th></tr></thead>
-        <tbody id="list"></tbody>
-      </table>
-    </div>
-  </aside>
-  <section>
-    <div class="card" id="msgCard">
-      <h3>Geselecteerde mail</h3>
-      <div id="msgMeta" class="mono"></div>
-      <pre id="msgBody" style="white-space:pre-wrap"></pre>
-    </div>
-
-    <div class="card">
-      <h3>AI → Quote + PDF</h3>
-      <div class="row">
-        <button class="btn" onclick="generate()">Genereer AI response + PDF</button>
-        <span id="genStatus" class="mono"></span>
-      </div>
-      <div id="options"></div>
-    </div>
-
-    <div class="card">
-      <h3>Mail preview</h3>
-      <div class="row" style="gap:16px;margin:6px 0;">
-        <div><b>Bijlagen:</b> <span id="atts"></span></div>
-        <label style="display:flex;align-items:center;gap:6px;"><input id="editToggle" type="checkbox" onchange="toggleEdit(this)"> Handmatig bewerken</label>
-      </div>
-      <iframe id="preview"></iframe>
-      <textarea id="editor" rows="12" style="display:none;width:100%;margin-top:8px" class="mono" placeholder="HTML e-mail..."></textarea>
-      <div class="row">
-        <input id="to" placeholder="Naar e-mail (voor verzenden)"/>
-        <input id="subjectSend" placeholder="Onderwerp (optioneel)"/>
-        <button class="btn" onclick="sendMail()">Verzend e-mail</button>
-        <span id="sendStatus" class="mono"></span>
-      </div>
-    </div>
-  </section>
-</main>
-
-<script>
-let CURRENT_ID = null;
-let LAST_OPTIONS = [];
-let LAST_HTML = '';
-
-async function refreshList(){
-  try{
-    const r = await fetch('/messages');
-    if(!r.ok){ throw new Error('HTTP '+r.status); }
-    const data = await r.json();
-    const tbody = document.getElementById('list');
-    tbody.innerHTML = '';
-    if(!Array.isArray(data) || !data.length){
-      document.getElementById('statusBar').textContent = 'Geen berichten gevonden. Gebruik "Importeer" of klik hier om een seed-bericht te maken.';
-      document.getElementById('statusBar').onclick = async ()=>{ await fetch('/messages/seed',{method:'POST'}); await refreshList(); };
-      return;
-    }
-    document.getElementById('statusBar').textContent = '';
-    data.forEach(m => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td><a href="#" onclick="loadMsg('${m.id}');return false;">${(m.subject||'(geen onderwerp)').replace(/</g,'&lt;')}</a></td><td>${(m.sender_email||'').replace(/</g,'&lt;')}</td><td><button class='btn secondary' onclick="deleteMsg('${m.id}')">Del</button></td>`;
-      tbody.appendChild(tr);
-    });
-  }catch(e){
-    document.getElementById('statusBar').textContent = 'Fout bij ophalen /messages: ' + e.message;
-  }
-}
-
-async function importMail(){
-  const body = document.getElementById('body').value;
-  const sender = document.getElementById('sender').value || 'klant@example.com';
-  const subject = document.getElementById('subject').value || 'Offerte aanvraag';
-  const language = document.getElementById('lang').value || 'nl';
-  try{
-    const r = await fetch('/ingest/test',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({source:'web', sender_email:sender, subject, body, language})});
-    if(!r.ok){ throw new Error('HTTP '+r.status); }
-    const msg = await r.json();
-    document.getElementById('importStatus').textContent = 'OK: ' + msg.id;
-    await refreshList();
-    await loadMsg(msg.id);
-  }catch(e){
-    document.getElementById('importStatus').textContent = 'Mislukt: ' + e.message;
-  }
-}
-
-async function loadMsg(id){
-  CURRENT_ID = id;
-  try{
-    const r = await fetch(`/messages/${id}`);
-    if(!r.ok){ throw new Error('HTTP '+r.status); }
-    const msg = await r.json();
-    document.getElementById('msgMeta').textContent = `ID: ${msg.id} | Van: ${msg.sender && msg.sender.email} | Taal: ${msg.language}`;
-    document.getElementById('msgBody').textContent = msg.body || '';
-    document.getElementById('genStatus').textContent = '';
-    document.getElementById('sendStatus').textContent = '';
-    document.getElementById('options').innerHTML = '';
-    LAST_OPTIONS = [];
-    document.getElementById('preview').srcdoc = '<html><body style="font-family:sans-serif;color:#111"><p><i>Hier verschijnt de preview...</i></p></body></html>';
-  }catch(e){
-    document.getElementById('statusBar').textContent = 'Fout bij ophalen /messages/'+id+': ' + e.message;
-  }
-}
-
-function prettyName(path){ try{ return path.split(/[\\/]/).pop(); }catch(e){ return path; } }
-function renderAttachments(list){
-  const el = document.getElementById('atts'); el.innerHTML = '';
-  (list||[]).forEach(p=>{
-     let href = p; if(!href.startsWith('/')){ href = '/out/'+prettyName(href); }
-     const a = document.createElement('a'); a.href = href; a.textContent = prettyName(p); a.target = '_blank'; a.style.marginRight='10px';
-     el.appendChild(a);
-  });
-}
-
-async function generate(){
-  if(!CURRENT_ID){ alert('Selecteer of importeer eerst een mail.'); return; }
-  document.getElementById('genStatus').textContent = 'Bezig...';
-  try{
-    const r = await fetch('/pipeline/generate',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message_id: CURRENT_ID})});
-    if(!r.ok){ throw new Error('HTTP '+r.status); }
-    const data = await r.json();
-
-    LAST_OPTIONS = data.options || [];
-    LAST_HTML = data.html || '';
-    document.getElementById('genStatus').textContent = (LAST_OPTIONS.length? 'OK — opties: '+LAST_OPTIONS.length : 'Geen opties');
-
-    // preview: zet inline html, en val terug op bestandspad
-    const previewFrame = document.getElementById('preview');
-    if (LAST_HTML) {
-      document.getElementById('editor').value = LAST_HTML;
-      previewFrame.srcdoc = LAST_HTML;
-    } else {
-      let path = (data.web_path || '').replace(/\\/g,'/');
-      if(!path){ path = (data.html_path||'').replace(/\\/g,'/'); if(path && !path.startsWith('/')) path = '/' + path; }
-      previewFrame.src = path || 'about:blank';
-    }
-
-    // render opties
-    const box = document.getElementById('options'); box.innerHTML='';
-    (LAST_OPTIONS||[]).forEach(o => {
-      const div = document.createElement('div');
-      div.innerHTML = `<div class="mono">• ${o.label} — € ${o.sell_total} (${o.validity})</div>`;
-      box.appendChild(div);
-    });
-
-    // bijlagen
-    renderAttachments(data.attachments||[]);
-
-  }catch(e){
-    document.getElementById('genStatus').textContent = 'Mislukt: '+e.message;
-  }
-}
-
-function toggleEdit(cb){
-  const ed = document.getElementById('editor'); const ifr = document.getElementById('preview');
-  if(cb.checked){ ed.style.display='block'; ifr.style.display='none'; }
-  else{ ifr.style.display='block'; ed.style.display='none'; }
-}
-
-async function sendMail(){
-  if(!LAST_OPTIONS.length){ alert('Genereer eerst een preview.'); return; }
-  const to = document.getElementById('to').value;
-  if(!to){ alert('Vul een ontvanger in.'); return; }
-  const subject = document.getElementById('subjectSend').value;
-  try{
-    const useEdit = document.getElementById('editToggle').checked;
-    let resp;
-    if(useEdit){
-      const html = document.getElementById('editor').value || LAST_HTML || '';
-      const atts = (LAST_OPTIONS||[]).map(o=>o.pdf_path).filter(Boolean);
-      resp = await fetch('/pipeline/send_raw',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({to, subject: subject||'Offerte', html, attachments: atts})});
-    } else {
-      resp = await fetch('/pipeline/send',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({to, language:'nl', options: LAST_OPTIONS, subject})});
-    }
-    const res = await resp.json(); // <-- bugfix (resp i.p.v. r)
-    document.getElementById('sendStatus').textContent = res.ok ? 'Verzonden ✔︎' : ('Mislukt: '+res.info);
-  }catch(e){
-    document.getElementById('sendStatus').textContent = 'Mislukt: '+e.message;
-  }
-}
-
-function openPreview(){
-  const f = document.getElementById('preview');
-  if(f && f.src) window.open(f.src, '_blank');
-}
-
-async function deleteMsg(id){
-  if(!confirm('Verwijderen?')) return;
-  try{ await fetch('/messages/'+id,{method:'DELETE'}); await refreshList(); document.getElementById('msgMeta').textContent=''; document.getElementById('msgBody').textContent=''; }catch(e){ alert('Delete mislukt: '+e.message); }
-}
-
-refreshList();
-</script>
-</body>
-</html>
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/templates/dashboard.html b/templates/dashboard.html
+index cd846900a80e7f65c427463111932d9b8b89dd5c..8147d8e414d2d0e05ffddaba43c4f2a7a38e48d8 100644
+--- a/templates/dashboard.html
++++ b/templates/dashboard.html
+@@ -64,50 +64,52 @@
+       <div class="row">
+         <button class="btn" onclick="generate()">Genereer AI response + PDF</button>
+         <span id="genStatus" class="mono"></span>
+       </div>
+       <div id="options"></div>
+     </div>
+ 
+     <div class="card">
+       <h3>Mail preview</h3>
+       <div class="row" style="gap:16px;margin:6px 0;">
+         <div><b>Bijlagen:</b> <span id="atts"></span></div>
+         <label style="display:flex;align-items:center;gap:6px;"><input id="editToggle" type="checkbox" onchange="toggleEdit(this)"> Handmatig bewerken</label>
+       </div>
+       <iframe id="preview"></iframe>
+       <textarea id="editor" rows="12" style="display:none;width:100%;margin-top:8px" class="mono" placeholder="HTML e-mail..."></textarea>
+       <div class="row">
+         <input id="to" placeholder="Naar e-mail (voor verzenden)"/>
+         <input id="subjectSend" placeholder="Onderwerp (optioneel)"/>
+         <button class="btn" onclick="sendMail()">Verzend e-mail</button>
+         <span id="sendStatus" class="mono"></span>
+       </div>
+     </div>
+   </section>
+ </main>
+ 
++<footer style="text-align:center;padding:10px;color:#9ca3af;">Dashboard v0.1.1</footer>
++
+ <script>
+ let CURRENT_ID = null;
+ let LAST_OPTIONS = [];
+ let LAST_HTML = '';
+ 
+ async function refreshList(){
+   try{
+     const r = await fetch('/messages');
+     if(!r.ok){ throw new Error('HTTP '+r.status); }
+     const data = await r.json();
+     const tbody = document.getElementById('list');
+     tbody.innerHTML = '';
+     if(!Array.isArray(data) || !data.length){
+       document.getElementById('statusBar').textContent = 'Geen berichten gevonden. Gebruik "Importeer" of klik hier om een seed-bericht te maken.';
+       document.getElementById('statusBar').onclick = async ()=>{ await fetch('/messages/seed',{method:'POST'}); await refreshList(); };
+       return;
+     }
+     document.getElementById('statusBar').textContent = '';
+     data.forEach(m => {
+       const tr = document.createElement('tr');
+       tr.innerHTML = `<td><a href="#" onclick="loadMsg('${m.id}');return false;">${(m.subject||'(geen onderwerp)').replace(/</g,'&lt;')}</a></td><td>${(m.sender_email||'').replace(/</g,'&lt;')}</td><td><button class='btn secondary' onclick="deleteMsg('${m.id}')">Del</button></td>`;
+       tbody.appendChild(tr);
+     });
+   }catch(e){
+     document.getElementById('statusBar').textContent = 'Fout bij ophalen /messages: ' + e.message;
+ 
+EOF
+)
