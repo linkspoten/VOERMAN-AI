@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <body style="font-family: Arial, Helvetica, sans-serif; line-height:1.45;">
+    <p>Beste {{ customer_name }},</p>
+    <p>Dank voor uw aanvraag. Op basis van uw gegevens bieden we onderstaande optie{% if options|length>1 %}s{% endif %} aan:</p>
+    <ul>
+      {% for opt in options %}
+      <li><strong>{{ opt.label }}</strong> – € {{ '%.0f'|format(opt.sell_total) }} (excl. btw). Geldig: {{ opt.validity }}.</li>
+      {% endfor %}
+    </ul>
+
+    {% if clarifying_questions and clarifying_questions|length>0 %}
+    <p><strong>Openstaande vragen:</strong></p>
+    <ul>
+      {% for q in clarifying_questions %}
+        <li>{{ q.question if (q is mapping and 'question' in q) else q }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <p>De detailofferte{% if options|length>1 %}s{% endif %} vindt u in de bijlage. U kunt de offerte accepteren via deze link:
+      <a href="{{ accept_url }}">Accepteer offerte</a>.</p>
+
+    <p>{{ signature_block|replace('\n', '<br>')|safe }}</p>
+  </body>
+</html>

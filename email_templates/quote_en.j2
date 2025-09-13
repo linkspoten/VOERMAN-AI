@@ -1,0 +1,1 @@
+<html><body>EN Preview{% for opt in options %}<p>{{ opt.label }}: € {{ '%.2f'|format(opt.sell_total) }} ({{ opt.validity }})</p>{% endfor %}<a href='{{ accept_url }}'>Accept</a></body></html>

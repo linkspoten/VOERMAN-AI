@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+jinja2
+reportlab
+python-dotenv
+pandas
+openpyxl
+geopy
+requests
+pycountry
+pypdf
